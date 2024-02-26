@@ -96,8 +96,8 @@ def met_phi_setup(self: Calibrator, reqs: dict, inputs: dict, reader_targets: di
     :param inputs: Additional inputs, currently not used.
     :param reader_targets: Additional targets, currently not used.
     """
-    bundle = reqs["external_files"]
-
+    # bundle = reqs["external_files"]
+    print("met_phi_setup will be skipped for now, since correction files for run 3 are not yet available!")
     # create the pt and phi correctors
     # import correctionlib
     # correction_set = correctionlib.CorrectionSet.from_string(
