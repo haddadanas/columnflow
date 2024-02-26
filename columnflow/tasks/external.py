@@ -101,6 +101,10 @@ class GetDatasetLFNs(DatasetTask, law.tasks.TransferLocalFile):
             self.logger.info(f"get lfns for dataset key {key} {msg}")
             lfns.extend(get_dataset_lfns(self.dataset_inst, self.global_shift_inst, key))
 
+        if "bad_files" in self.dataset_inst.aux.keys():
+            for lfn in self.dataset_inst.x.bad_files:
+                lfns.remove(lfn)
+
         if self.validate and len(lfns) != self.dataset_info_inst.n_files:
             raise ValueError(
                 f"number of obtained lfns ({len(lfns)}) does not match number of files "
