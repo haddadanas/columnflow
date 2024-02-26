@@ -99,22 +99,22 @@ def met_phi_setup(self: Calibrator, reqs: dict, inputs: dict, reader_targets: di
     bundle = reqs["external_files"]
 
     # create the pt and phi correctors
-    import correctionlib
-    correction_set = correctionlib.CorrectionSet.from_string(
-        self.get_met_file(bundle.files).load(formatter="gzip").decode("utf-8"),
-    )
-    name_tmpl = self.get_met_config()
-    self.met_pt_corrector = correction_set[name_tmpl.format(
-        variable="pt",
-        data_source=self.dataset_inst.data_source,
-    )]
-    self.met_phi_corrector = correction_set[name_tmpl.format(
-        variable="phi",
-        data_source=self.dataset_inst.data_source,
-    )]
+    # import correctionlib
+    # correction_set = correctionlib.CorrectionSet.from_string(
+    #     self.get_met_file(bundle.files).load(formatter="gzip").decode("utf-8"),
+    # )
+    # name_tmpl = self.get_met_config()
+    # self.met_pt_corrector = correction_set[name_tmpl.format(
+    #     variable="pt",
+    #     data_source=self.dataset_inst.data_source,
+    # )]
+    # self.met_phi_corrector = correction_set[name_tmpl.format(
+    #     variable="phi",
+    #     data_source=self.dataset_inst.data_source,
+    # )]
 
-    # check versions
-    if self.met_pt_corrector.version not in (1,):
-        raise Exception(f"unsuppprted met pt corrector version {self.met_pt_corrector.version}")
-    if self.met_phi_corrector.version not in (1,):
-        raise Exception(f"unsuppprted met phi corrector version {self.met_phi_corrector.version}")
+    # # check versions
+    # if self.met_pt_corrector.version not in (1,):
+    #     raise Exception(f"unsuppprted met pt corrector version {self.met_pt_corrector.version}")
+    # if self.met_phi_corrector.version not in (1,):
+    #     raise Exception(f"unsuppprted met phi corrector version {self.met_phi_corrector.version}")
