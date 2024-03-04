@@ -5,7 +5,7 @@ MET corrections.
 """
 
 from columnflow.calibration import Calibrator, calibrator
-from columnflow.util import maybe_import
+from columnflow.util import maybe_import, DotDict
 from columnflow.columnar_util import set_ak_column
 
 np = maybe_import("numpy")
@@ -96,25 +96,35 @@ def met_phi_setup(self: Calibrator, reqs: dict, inputs: dict, reader_targets: di
     :param inputs: Additional inputs, currently not used.
     :param reader_targets: Additional targets, currently not used.
     """
-    # bundle = reqs["external_files"]
-    print("met_phi_setup will be skipped for now, since correction files for run 3 are not yet available!")
-    # create the pt and phi correctors
-    # import correctionlib
-    # correction_set = correctionlib.CorrectionSet.from_string(
-    #     self.get_met_file(bundle.files).load(formatter="gzip").decode("utf-8"),
-    # )
-    # name_tmpl = self.get_met_config()
-    # self.met_pt_corrector = correction_set[name_tmpl.format(
-    #     variable="pt",
-    #     data_source=self.dataset_inst.data_source,
-    # )]
-    # self.met_phi_corrector = correction_set[name_tmpl.format(
-    #     variable="phi",
-    #     data_source=self.dataset_inst.data_source,
-    # )]
+    bundle = reqs["external_files"]
+    if bundle.config_inst.campaign.x.year >= 2022:
+        print("met_phi_setup will be skipped for now, since correction files for run 3 are not yet available!")
+        self.met_pt_corrector = DotDict({
+            "evaluate": lambda *args: args[0],
+        })
+        self.met_phi_corrector = DotDict({
+            "evaluate": lambda *args: args[1],
+        })
+        return
 
-    # # check versions
-    # if self.met_pt_corrector.version not in (1,):
-    #     raise Exception(f"unsuppprted met pt corrector version {self.met_pt_corrector.version}")
-    # if self.met_phi_corrector.version not in (1,):
-    #     raise Exception(f"unsuppprted met phi corrector version {self.met_phi_corrector.version}")
+    # create the pt and phi correctors
+    import correctionlib
+    # from IPython import embed; embed()
+    correction_set = correctionlib.CorrectionSet.from_string(
+        self.get_met_file(bundle.files).load(formatter="gzip").decode("utf-8"),
+    )
+    name_tmpl = self.get_met_config()
+    self.met_pt_corrector = correction_set[name_tmpl.format(
+        variable="pt",
+        data_source=self.dataset_inst.data_source,
+    )]
+    self.met_phi_corrector = correction_set[name_tmpl.format(
+        variable="phi",
+        data_source=self.dataset_inst.data_source,
+    )]
+
+    # check versions
+    if self.met_pt_corrector.version not in (1,):
+        raise Exception(f"unsuppprted met pt corrector version {self.met_pt_corrector.version}")
+    if self.met_phi_corrector.version not in (1,):
+        raise Exception(f"unsuppprted met phi corrector version {self.met_phi_corrector.version}")
