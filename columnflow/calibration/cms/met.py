@@ -97,7 +97,7 @@ def met_phi_setup(self: Calibrator, reqs: dict, inputs: dict, reader_targets: di
     :param reader_targets: Additional targets, currently not used.
     """
     bundle = reqs["external_files"]
-    if bundle.config_inst.campaign.x.year >= 2022:
+    if bundle.config_inst.has_tag("run3"):
         print("met_phi_setup will be skipped for now, since correction files for run 3 are not yet available!")
         self.met_pt_corrector = DotDict({
             "evaluate": lambda *args: args[0],
