@@ -112,7 +112,9 @@ class CreateHistograms(
         import hist
         import numpy as np
         import awkward as ak
-        from columnflow.columnar_util import Route, update_ak_array, add_ak_aliases, has_ak_column
+        from columnflow.columnar_util import (
+            Route, update_ak_array, add_ak_aliases, has_ak_column, fill_hist,
+        )
 
         # prepare inputs and outputs
         reqs = self.requires()
@@ -154,7 +156,7 @@ class CreateHistograms(
         empty_f32 = ak.Array(np.array([], dtype=np.float32))
 
         # iterate over chunks of events and diffs
-        file_targets = [inputs["events"]["collection"][0]["events"]]
+        file_targets = [inputs["events"]["events"]]
         if self.producer_insts:
             file_targets.extend([inp["columns"] for inp in inputs["producers"]])
         if self.ml_model_insts:
@@ -221,7 +223,7 @@ class CreateHistograms(
                     )
 
                     # broadcast arrays so that each event can be filled for all its categories
-                    fill_kwargs = {
+                    fill_data = {
                         "category": category_ids,
                         "process": events.process_id,
                         "shift": np.ones(len(events), dtype=np.int32) * self.global_shift_inst.id,
@@ -237,11 +239,10 @@ class CreateHistograms(
                                     return empty_f32
                                 return route.apply(events, null_value=variable_inst.null_value)
                         # apply it
-                        fill_kwargs[variable_inst.name] = expr(events)
+                        fill_data[variable_inst.name] = expr(events)
 
-                    # broadcast and fill
-                    arrays = ak.flatten(ak.cartesian(fill_kwargs))
-                    histograms[var_key].fill(**{field: arrays[field] for field in arrays.fields})
+                    # fill it
+                    fill_hist(histograms[var_key], fill_data)
 
         # merge output files
         self.output()["hists"].dump(histograms, formatter="pickle")
