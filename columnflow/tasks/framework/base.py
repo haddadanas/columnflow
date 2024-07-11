@@ -19,9 +19,9 @@ import luigi
 import law
 import order as od
 
-from columnflow.types import Sequence, Callable, Any
 from columnflow.columnar_util import mandatory_coffea_columns, Route, ColumnCollection
 from columnflow.util import is_regex, DotDict
+from columnflow.types import Sequence, Callable, Any, T
 
 
 # default analysis and config related objects
@@ -148,8 +148,13 @@ class AnalysisTask(BaseTask, law.SandboxTask):
         # build the params
         params = super().req_params(inst, **kwargs)
 
-        # use a default version when not explicitly set in kwargs
-        if isinstance(getattr(cls, "version", None), luigi.Parameter) and "version" not in kwargs:
+        # when not explicitly set in kwargs and no global value was defined on the cli for the task
+        # family, evaluate and use the default value
+        if (
+            isinstance(getattr(cls, "version", None), luigi.Parameter) and
+            "version" not in kwargs and
+            not law.parser.global_cmdline_values().get(f"{cls.task_family}_version")
+        ):
             default_version = cls.get_default_version(inst, params)
             if default_version and default_version != law.NO_STR:
                 params["version"] = default_version
@@ -671,8 +676,26 @@ class AnalysisTask(BaseTask, law.SandboxTask):
         # store the analysis instance
         self.analysis_inst = self.get_analysis_inst(self.analysis)
 
+        # cached values added and accessed by cached_value()
+        self._cached_values = {}
+
+    def cached_value(self, key: str, func: Callable[[], T]) -> T:
+        """
+        Upon first invocation, the function *func* is called and its return value is stored under
+        *key* in :py:attr:`_cached_values`. Subsequent calls with the same *key* return the cached
+        value.
+
+        :param key: The key under which the value is stored.
+        :param func: The function that is called to generate the value.
+        :return: The cached value.
+        """
+        if key not in self._cached_values:
+            self._cached_values[key] = func()
+        return self._cached_values[key]
+
     def store_parts(self) -> law.util.InsertableDict:
-        """Returns a :py:class:`law.util.InsertableDict` whose values are used to create a store path.
+        """
+        Returns a :py:class:`law.util.InsertableDict` whose values are used to create a store path.
         For instance, the parts ``{"keyA": "a", "keyB": "b", 2: "c"}`` lead to the path "a/b/c". The
         keys can be used by subclassing tasks to overwrite values.
 
@@ -962,6 +985,31 @@ class ConfigTask(AnalysisTask):
             columns |= set(Route(c) for c in mandatory_coffea_columns)
 
         return columns
+
+    def _expand_keep_column(
+        self: ConfigTask,
+        column:
+            ColumnCollection | Route | str |
+            Sequence[str | int | slice | type(Ellipsis) | list | tuple],
+    ) -> set[Route]:
+        """
+        Expands a *column* into a set of :py:class:`Route` objects. *column* can be a
+        :py:class:`ColumnCollection`, a string, or any type that is accepted by :py:class:`Route`.
+        Collections are expanded through :py:meth:`find_keep_columns`.
+
+        :param column: The column to expand.
+        :return: A set of :py:class:`Route` objects.
+        """
+        # expand collections
+        if isinstance(column, ColumnCollection):
+            return self.find_keep_columns(column)
+
+        # brace expand strings
+        if isinstance(column, str):
+            return set(map(Route, law.util.brace_expand(column)))
+
+        # let Route handle it
+        return {Route(column)}
 
 
 class ShiftTask(ConfigTask):

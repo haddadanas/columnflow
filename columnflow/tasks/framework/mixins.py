@@ -24,7 +24,7 @@ from columnflow.production import Producer
 from columnflow.weight import WeightProducer
 from columnflow.ml import MLModel
 from columnflow.inference import InferenceModel
-from columnflow.columnar_util import Route, ColumnCollection
+from columnflow.columnar_util import Route, ColumnCollection, ChunkedIOHandler
 from columnflow.util import maybe_import, DotDict
 
 ak = maybe_import("awkward")
@@ -179,8 +179,9 @@ class CalibratorMixin(ConfigTask):
             self._calibrator_inst = self.get_calibrator_inst(self.calibrator, {"task": self})
 
             # overwrite the sandbox when set
-            if self._calibrator_inst.sandbox:
-                self.sandbox = self._calibrator_inst.sandbox
+            sandbox = self._calibrator_inst.get_sandbox()
+            if sandbox:
+                self.sandbox = sandbox
                 # rebuild the sandbox inst when already initialized
                 if self._sandbox_initialized:
                     self._initialize_sandbox(force=True)
@@ -554,8 +555,9 @@ class SelectorMixin(ConfigTask):
             self._selector_inst = self.get_selector_inst(self.selector, {"task": self})
 
             # overwrite the sandbox when set
-            if self._selector_inst.sandbox:
-                self.sandbox = self._selector_inst.sandbox
+            sandbox = self._selector_inst.get_sandbox()
+            if sandbox:
+                self.sandbox = sandbox
                 # rebuild the sandbox inst when already initialized
                 if self._sandbox_initialized:
                     self._initialize_sandbox(force=True)
@@ -827,8 +829,9 @@ class ProducerMixin(ConfigTask):
             self._producer_inst = self.get_producer_inst(self.producer, {"task": self})
 
             # overwrite the sandbox when set
-            if self._producer_inst.sandbox:
-                self.sandbox = self._producer_inst.sandbox
+            sandbox = self._producer_inst.get_sandbox()
+            if sandbox:
+                self.sandbox = sandbox
                 # rebuild the sandbox inst when already initialized
                 if self._sandbox_initialized:
                     self._initialize_sandbox(force=True)
@@ -2151,6 +2154,14 @@ class WeightProducerMixin(ConfigTask):
                 {"task": self},
             )
 
+            # overwrite the sandbox when set
+            sandbox = self._weight_producer_inst.get_sandbox()
+            if sandbox:
+                self.sandbox = sandbox
+                # rebuild the sandbox inst when already initialized
+                if self._sandbox_initialized:
+                    self._initialize_sandbox(force=True)
+
         return self._weight_producer_inst
 
     def store_parts(self: WeightProducerMixin) -> law.util.InsertableDict[str, str]:
@@ -2174,6 +2185,10 @@ class ChunkedIOMixin(AnalysisTask):
     )
 
     exclude_params_req = {"check_finite_output", "check_overlapping_inputs"}
+
+    # define default chunk and pool sizes that can be adjusted per inheriting task
+    default_chunk_size = ChunkedIOHandler.default_chunk_size
+    default_pool_size = ChunkedIOHandler.default_pool_size
 
     @classmethod
     def raise_if_not_finite(cls, ak_array: ak.Array) -> None:
@@ -2221,12 +2236,23 @@ class ChunkedIOMixin(AnalysisTask):
             )
 
     def iter_chunked_io(self, *args, **kwargs):
-        from columnflow.columnar_util import ChunkedIOHandler
-
         # get the chunked io handler from first arg or create a new one with all args
         if len(args) == 1 and isinstance(args[0], ChunkedIOHandler):
             handler = args[0]
         else:
+            # default chunk and pool sizes
+            for key in ["chunk_size", "pool_size"]:
+                if kwargs.get(key) is None:
+                    # get the default from the config, defaulting to the class default
+                    kwargs[key] = law.config.get_expanded_int(
+                        "analysis",
+                        f"{self.task_family}__chunked_io_{key}",
+                        getattr(self, f"default_{key}"),
+                    )
+                # when still not set, remove it and let the handler decide using its defaults
+                if kwargs.get(key) is None:
+                    kwargs.pop(key, None)
+            # create the handler
             handler = ChunkedIOHandler(*args, **kwargs)
 
         # iterate in the handler context
@@ -2257,3 +2283,36 @@ class ChunkedIOMixin(AnalysisTask):
         # eager, overly cautious gc
         del handler
         gc.collect()
+
+
+class HistHookMixin(ConfigTask):
+
+    hist_hook = luigi.Parameter(
+        default=law.NO_STR,
+        description="name of a function in the config's auxiliary dictionary 'hist_hooks' that is "
+        "invoked before plotting to update a potentially nested dictionary of histograms; "
+        "default: empty",
+    )
+
+    def invoke_hist_hook(self, hists: dict) -> dict:
+        """
+        Hook to update histograms before plotting.
+        """
+        if self.hist_hook in (None, "", law.NO_STR):
+            return hists
+
+        # get the hook from the config instance
+        hooks = self.config_inst.x("hist_hooks", {})
+        if self.hist_hook not in hooks:
+            raise ValueError(
+                f"hist hook '{self.hist_hook}' not found in 'hist_hooks' auxiliary entry of config",
+            )
+        func = hooks[self.hist_hook]
+        if not callable(func):
+            raise ValueError(f"hist hook '{self.hist_hook}' is not callable: {func}")
+
+        # invoke it
+        self.publish_message(f"invoking hist hook '{self.hist_hook}'")
+        hists = func(self, hists)
+
+        return hists

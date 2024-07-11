@@ -15,6 +15,7 @@ from columnflow.tasks.framework.mixins import (
     ShiftSourcesMixin, WeightProducerMixin, ChunkedIOMixin,
 )
 from columnflow.tasks.framework.remote import RemoteWorkflow
+from columnflow.tasks.framework.parameters import last_edge_inclusive_inst
 from columnflow.tasks.reduction import ReducedEventsUser
 from columnflow.tasks.production import ProduceColumns
 from columnflow.tasks.ml import MLEvaluation
@@ -31,6 +32,8 @@ class CreateHistograms(
     law.LocalWorkflow,
     RemoteWorkflow,
 ):
+    last_edge_inclusive = last_edge_inclusive_inst
+
     sandbox = dev_sandbox(law.config.get("analysis", "default_columnar_sandbox"))
 
     # upstream requirements
@@ -75,7 +78,7 @@ class CreateHistograms(
                 ]
 
             # add weight_producer dependent requirements
-            reqs["weight_producer"] = self.weight_producer_inst.run_requires()
+            reqs["weight_producer"] = law.util.make_unique(law.util.flatten(self.weight_producer_inst.run_requires()))
 
         return reqs
 
@@ -95,7 +98,7 @@ class CreateHistograms(
             ]
 
         # add weight_producer dependent requirements
-        reqs["weight_producer"] = self.weight_producer_inst.run_requires()
+        reqs["weight_producer"] = law.util.make_unique(law.util.flatten(self.weight_producer_inst.run_requires()))
 
         return reqs
 
@@ -116,15 +119,15 @@ class CreateHistograms(
             Route, update_ak_array, add_ak_aliases, has_ak_column, fill_hist,
         )
 
-        # prepare inputs and outputs
-        reqs = self.requires()
+        # prepare inputs
         inputs = self.input()
 
         # declare output: dict of histograms
         histograms = {}
 
         # run the weight_producer setup
-        reader_targets = self.weight_producer_inst.run_setup(reqs["weight_producer"], inputs["weight_producer"])
+        producer_reqs = self.weight_producer_inst.run_requires()
+        reader_targets = self.weight_producer_inst.run_setup(producer_reqs, luigi.task.getpaths(producer_reqs))
 
         # create a temp dir for saving intermediate files
         tmp_dir = law.LocalDirectoryTarget(is_tmp=True)
@@ -171,6 +174,7 @@ class CreateHistograms(
                 [inp.path for inp in inps],
                 source_type=len(file_targets) * ["awkward_parquet"] + [None] * len(reader_targets),
                 read_columns=(len(file_targets) + len(reader_targets)) * [read_columns],
+                chunk_size=self.weight_producer_inst.get_min_chunk_size(),
             ):
                 # optional check for overlapping inputs
                 if self.check_overlapping_inputs:
@@ -242,7 +246,11 @@ class CreateHistograms(
                         fill_data[variable_inst.name] = expr(events)
 
                     # fill it
-                    fill_hist(histograms[var_key], fill_data)
+                    fill_hist(
+                        histograms[var_key],
+                        fill_data,
+                        last_edge_inclusive=self.last_edge_inclusive,
+                    )
 
         # merge output files
         self.output()["hists"].dump(histograms, formatter="pickle")
@@ -293,6 +301,12 @@ class MergeHistograms(
         CreateHistograms=CreateHistograms,
     )
 
+    @classmethod
+    def req_params(cls, inst: AnalysisTask, **kwargs) -> dict:
+        _prefer_cli = law.util.make_set(kwargs.get("_prefer_cli", [])) | {"variables"}
+        kwargs["_prefer_cli"] = _prefer_cli
+        return super().req_params(inst, **kwargs)
+
     def create_branch_map(self):
         # create a dummy branch map so that this task could be submitted as a job
         return {0: None}
@@ -306,10 +320,8 @@ class MergeHistograms(
 
     def requires(self):
         # optional dynamic behavior: determine not yet created variables and require only those
-        prefer_cli = {"variables"}
         variables = self.variables
         if self.only_missing:
-            prefer_cli.clear()
             missing = self.output().count(existing=False, keys=True)[1]
             variables = tuple(sorted(missing, key=variables.index))
 
@@ -321,7 +333,6 @@ class MergeHistograms(
             branch=-1,
             variables=tuple(variables),
             _exclude={"branches"},
-            _prefer_cli=prefer_cli,
         )
 
     def output(self):

@@ -91,8 +91,8 @@ class ReduceEvents(
     @law.decorator.safe_output
     def run(self):
         from columnflow.columnar_util import (
-            ColumnCollection, Route, RouteFilter, mandatory_coffea_columns, update_ak_array,
-            add_ak_aliases, sorted_ak_to_parquet,
+            Route, RouteFilter, mandatory_coffea_columns, update_ak_array, add_ak_aliases,
+            sorted_ak_to_parquet,
         )
         from columnflow.selection.util import create_collections_from_masks
 
@@ -113,7 +113,7 @@ class ReduceEvents(
         write_columns: set[Route] = set()
         skip_columns: set[str] = set()
         for c in self.config_inst.x.keep_columns.get(self.task_family, ["*"]):
-            for r in (self.find_keep_columns(c) if isinstance(c, ColumnCollection) else {Route(c)}):
+            for r in self._expand_keep_column(c):
                 if r.has_tag("skip"):
                     skip_columns.add(r.column)
                 else:
@@ -531,7 +531,7 @@ class ProvideReducedEvents(
 
     @law.workflow_property(setter=True, cache=True, empty_value=0)
     def file_merging(self):
-        if self.skip_merging:
+        if self.skip_merging or self.dataset_info_inst.n_files == 1:
             return 1
 
         # check if the merging stats are present
@@ -548,12 +548,14 @@ class ProvideReducedEvents(
 
     def _req_merged_reduced_events(self, **params) -> law.Task:
         if self.is_workflow():
+            # require the full merging forest
             params["tree_index"] = -1
             params["branch"] = 0
         else:
-            _exclude = params.pop("_exclude", None)
-            _exclude = set() if _exclude is None else law.util.make_set(_exclude)
+            # require a single merging tree identified by the tree_index via a local workflow
+            _exclude = law.util.make_set(params.pop("_exclude", None) or set())
             _exclude |= {"branch"}
+            params["_exclude"] = _exclude
             params["tree_index"] = self.branch
             params["workflow"] = "local"
 
@@ -562,50 +564,68 @@ class ProvideReducedEvents(
     def workflow_requires(self):
         reqs = super().workflow_requires()
 
-        # when skipping merging, require the reduced events directly
-        # when forcing merging, require the merged events
-        # (also, when merged events are complete, require them to show the dependence in the cli)
-        # otherwise, do not register reqs but yield them dynamically in local_workflow_pre_run()
-        if self.skip_merging:
+        # strategy:
+        # - when it is clear that the reduced events are being used directly, require them when not
+        #   in pilot mode
+        # - otherwise, always require the reduction stats as they are needed to make a decision
+        # - when merging is forced, require it
+        # - otherwise, and if the merging is already known, require either reduced or merged events
+        if self.skip_merging or (not self.force_merging and self.dataset_info_inst.n_files == 1):
+            # reduced events are used directly without having to look into the file merging factor
             if not self.pilot:
                 reqs["events"] = self._req_reduced_events()
         else:
-            req_merged = self._req_merged_reduced_events()
-            if self.force_merging or req_merged.complete():
-                reqs["events"] = req_merged
+            # here, the merging is unclear so require the stats
+            reqs["reduction_stats"] = self.reqs.MergeReductionStats.req(self)
+
+            if self.force_merging:
+                # require merged events when forced
+                reqs["events"] = self._req_merged_reduced_events()
+            else:
+                # require either when the file merging is known, and nothing otherwise to let the
+                # dynamic dependency definition resolve it at runtime
+                file_merging = self.file_merging
+                if file_merging > 1:
+                    reqs["events"] = self._req_merged_reduced_events()
+                elif file_merging == 1 and not self.pilot:
+                    reqs["events"] = self._req_reduced_events()
 
         return reqs
 
     def requires(self):
-        # same as for workflow requirements, declare static requirements when a decision is pre-set,
-        # and otherwise let run() yield dynamic ones
-        if self.skip_merging:
-            return self._req_reduced_events()
-        req_merged = self._req_merged_reduced_events()
-        if self.force_merging or req_merged.complete():
-            return req_merged
-        return []
+        # same as for workflow requirements without optional pilot check
+        reqs = {}
+        if self.skip_merging or (not self.force_merging and self.dataset_info_inst.n_files == 1):
+            reqs["events"] = self._req_reduced_events()
+        else:
+            reqs["reduction_stats"] = self.reqs.MergeReductionStats.req(self)
+
+            if self.force_merging:
+                reqs["events"] = self._req_merged_reduced_events()
+            else:
+                file_merging = self.file_merging
+                if file_merging > 1:
+                    reqs["events"] = self._req_merged_reduced_events()
+                elif file_merging == 1:
+                    reqs["events"] = self._req_reduced_events()
+
+        return reqs
 
     @workflow_condition.output
     def output(self):
-        if self.skip_merging or self.force_merging:
-            return self.requires().output()
+        # the "events" requirement is known at this point
+        req = self.requires()["events"]
 
-        # declare the output to be the one of the upstream task
-        return (
-            self._req_reduced_events()
-            if self.file_merging == 1
-            else self._req_merged_reduced_events()
-        ).output()
+        # to simplify the handling for downstream tasks, extract the single output from workflows
+        output = req.output()
+        return list(output.collection.targets.values())[0] if req.is_workflow() else output
 
     def _yield_dynamic_deps(self):
-        # do nothing if a decision was pre-set
-        if self.skip_merging or self.force_merging:
+        # do nothing if a decision was pre-set in which case requirements were already triggered
+        if self.skip_merging or (not self.force_merging and self.dataset_info_inst.n_files == 1):
             return
 
-        if self.file_merging == 0:
-            yield self.reqs.MergeReductionStats.req(self)
-
+        # yield the appropriate requirement
         yield (
             self._req_reduced_events()
             if self.file_merging == 1

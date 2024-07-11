@@ -1,11 +1,7 @@
-<!-- marker-before-logo -->
-
-<p align="center">
+<h1 align="center">
   <img src="https://media.githubusercontent.com/media/columnflow/columnflow/master/assets/logo_dark.png#gh-light-mode-only" width="480" />
   <img src="https://media.githubusercontent.com/media/columnflow/columnflow/master/assets/logo_bright.png#gh-dark-mode-only" width="480" />
-</p>
-
-<!-- marker-after-logo -->
+</h1>
 
 <!-- marker-before-badges -->
 
@@ -43,8 +39,8 @@ Original source hosted at [GitHub](https://github.com/columnflow/columnflow).
 
 This project is currently in a beta phase.
 The project setup, suggested workflows, definitions of particular tasks, and the signatures of various helper classes and functions are mostly frozen but could still be subject to changes in the near future.
-At this point (July 2023), four large-scale analyses based upon columnflow are being developed, and in the process, help test and verify various aspects of its core.
-The first released version is expected in the fall of 2023.
+At this point (July 2024), various large-scale analyses based upon columnflow are being developed, and in the process, help test and verify various aspects of its core.
+The first major release with a largely frozen API is expected in the fall of 2024.
 However, if you would like to join early on, contribute or just give it a spin, feel free to get in touch!
 
 <!-- marker-after-note -->
@@ -68,7 +64,7 @@ bash -c "$(curl -Ls https://raw.githubusercontent.com/columnflow/columnflow/mast
 
 At the end of the setup, you will see further instructions and suggestions to run your first analysis tasks (example below).
 
-```
+```text
 Setup successfull! The next steps are:
 
 1. Setup the repository and install the environment.
@@ -107,7 +103,6 @@ Setup successfull! The next steps are:
 
 For a better overview of the tasks that are triggered by the commands below, checkout the current (yet stylized) [task graph](https://github.com/columnflow/columnflow/wiki#default-task-graph).
 
-
 ## Projects using columnflow
 
 - [hh2bbtautau](https://github.com/uhh-cms/hh2bbtautau): HH → bb𝜏𝜏 analysis with CMS.
@@ -115,7 +110,6 @@ For a better overview of the tasks that are triggered by the commands below, che
 - [topmass](https://github.com/uhh-cms/topmass): Top quark mass measurement with CMS.
 - [mttbar](https://github.com/uhh-cms/mttbar): Search for heavy resonances in ttbar events with CMS.
 - [analysis playground](https://github.com/uhh-cms/analysis_playground): A testing playground for HEP analyses.
-
 
 ## Contributors
 
@@ -150,7 +144,6 @@ For a better overview of the tasks that are triggered by the commands below, che
 <!-- ALL-CONTRIBUTORS-LIST:END -->
 
 This project follows the [all-contributors](https://github.com/all-contributors/all-contributors) specification.
-
 
 ## Development
 
