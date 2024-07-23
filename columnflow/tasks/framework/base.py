@@ -141,7 +141,7 @@ class AnalysisTask(BaseTask, law.SandboxTask):
         _prefer_cli = law.util.make_set(kwargs.get("_prefer_cli", [])) | {
             "version", "workflow", "job_workers", "poll_interval", "walltime", "max_runtime",
             "retries", "acceptance", "tolerance", "parallel_jobs", "shuffle_jobs", "htcondor_cpus",
-            "htcondor_gpus", "htcondor_memory", "htcondor_pool",
+            "htcondor_gpus", "htcondor_memory", "htcondor_pool", "pilot",
         }
         kwargs["_prefer_cli"] = _prefer_cli
 
@@ -153,7 +153,8 @@ class AnalysisTask(BaseTask, law.SandboxTask):
         if (
             isinstance(getattr(cls, "version", None), luigi.Parameter) and
             "version" not in kwargs and
-            not law.parser.global_cmdline_values().get(f"{cls.task_family}_version")
+            not law.parser.global_cmdline_values().get(f"{cls.task_family}_version") and
+            cls.task_family != law.parser.root_task().task_family
         ):
             default_version = cls.get_default_version(inst, params)
             if default_version and default_version != law.NO_STR:
@@ -416,7 +417,7 @@ class AnalysisTask(BaseTask, law.SandboxTask):
                     _cache["all_object_names"] = {
                         obj.name
                         for obj, _, _ in
-                        getattr(container, "walk_{}".format(plural))()
+                        getattr(container, f"walk_{plural}")()
                     }
                 else:
                     _cache["all_object_names"] = set(getattr(container, plural).names())
@@ -428,7 +429,7 @@ class AnalysisTask(BaseTask, law.SandboxTask):
                 if object_cls in container._deep_child_classes:
                     kwargs["deep"] = deep
                 _cache["has_obj_func"] = functools.partial(
-                    getattr(container, "has_{}".format(singular)),
+                    getattr(container, f"has_{singular}"),
                     **kwargs,
                 )
             return _cache["has_obj_func"](name)
