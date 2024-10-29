@@ -190,12 +190,22 @@ class PlotVariablesBase(
             for outp in self.output()["plots"]:
                 outp.dump(fig, formatter="mpl")
 
+            # save the histograms
+            if self.save_hists:
+                for outp in self.output()["hists"]:
+                    outp.dump(hists, formatter="pickle")
+
 
 class PlotVariablesBaseSingleShift(
     PlotVariablesBase,
     ShiftTask,
 ):
     exclude_index = True
+
+    save_hists = luigi.BoolParameter(
+        default=False,
+        description="when True, the histograms are saved as pickle files; default: False",
+    )
 
     # upstream requirements
     reqs = Requirements(
@@ -245,9 +255,14 @@ class PlotVariablesBaseSingleShift(
         return parts
 
     def output(self):
-        return {
+        output = {
             "plots": [self.target(name) for name in self.get_plot_names("plot")],
         }
+        if self.save_hists:
+            output["hists"] = [
+                self.target(self.get_plot_names("hist")[0].replace(self.file_types[0], "pickle")),
+            ]
+        return output
 
     def store_parts(self):
         parts = super().store_parts()
